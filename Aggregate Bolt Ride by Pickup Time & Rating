@@ -1,0 +1,70 @@
+
+WITH
+raw AS
+(
+SELECT
+week
+, day
+, transaction_id
+, rider_id
+, CAST(SPLIT(Pickup_time__minutes_,":")[OFFSET(0)] AS FLOAT64) AS mins
+, CAST(SPLIT(Pickup_time__minutes_,":")[OFFSET(1)] AS FLOAT64) AS secs
+, Client_rating
+
+FROM `handriani-project-1.ridesdata.rides_order`
+GROUP BY 1,2,3,4,5,6,7
+ORDER BY 1,2,3,4,5,6,7
+
+)
+
+, raw2 AS
+(SELECT
+week
+, day
+, transaction_id
+, rider_id
+, ROUND(mins + (secs/60),2) AS pickup_time_mins
+, Client_rating
+
+FROM raw
+)
+
+, final AS
+(
+SELECT
+week
+, day
+, transaction_id
+, rider_id
+, pickup_time_mins
+, CASE 
+  WHEN pickup_time_mins = 0 THEN "Unusual Pickup"
+  WHEN pickup_time_mins > 0 AND pickup_time_mins <=10 THEN "Fast Pickup"
+  WHEN pickup_time_mins > 10 AND pickup_time_mins <=20 THEN "Medium Pickup"
+  WHEN pickup_time_mins > 20 THEN "Slow Pickup"
+  ELSE "NA"
+  END AS pickup_time
+
+, CASE 
+WHEN CAST(Client_rating AS FLOAT64) < 3 THEN "Rating < 3"
+WHEN CAST(Client_rating AS FLOAT64) = 3 THEN "Rating 3"
+WHEN CAST(Client_rating AS FLOAT64) > 3 THEN "Rating > 3"
+ELSE "No Rating"
+END AS rating
+
+FROM raw2
+GROUP BY 1,2,3,4,5,6,7
+ORDER BY 1,2,3,4,5,6,7
+)
+
+
+SELECT
+week
+-- , day
+, pickup_time
+, rating
+, COUNT(DISTINCT transaction_id) AS order_num
+
+FROM final
+GROUP BY 1,2,3
+ORDER BY 1,2,3
