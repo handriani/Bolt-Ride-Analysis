@@ -1,0 +1,99 @@
+
+WITH 
+raw AS
+(
+SELECT
+week AS week_num
+, day
+, rider_id
+, transaction_id
+, CASE 
+  WHEN Ride_distance__meters_ = 0 OR Ride_distance__meters_ IS NULL THEN "Unusual Trip"
+  WHEN Ride_distance__meters_ > 500 AND Ride_distance__meters_ <= 1000 THEN "Very Short Trip"
+  WHEN Ride_distance__meters_ > 1000 AND Ride_distance__meters_ <= 5000 THEN "Short Trip"
+  WHEN Ride_distance__meters_ > 5000 AND Ride_distance__meters_ <= 10000 THEN "Medium Trip"
+  WHEN Ride_distance__meters_ > 10000 THEN "Long Trip"
+  ELSE "Unusual Trip" --> Any ride distance < 500 m is still considered walkable
+  END AS ride_distance
+, Client_paid__Euros_
+, Ride_price__Euros_
+, CASE 
+  WHEN Client_paid__Euros_ = 0 
+  OR Client_paid__Euros_ IS NULL 
+  OR Client_paid__Euros_ < Ride_price__Euros_
+  THEN "1" ELSE "0"
+  END AS unusual_order --> When riders paid less than fare in app/didn't pay at all 
+
+FROM `handriani-project-1.ridesdata.rides_order`
+GROUP BY 1,2,3,4,5,6,7,8
+ORDER BY 1,2,3,4,5,6,7,8
+)
+
+--//PART-1 COUNTING NUMBER OF RIDERS WITH UNUSUAL ORDER
+, rider AS
+(
+SELECT
+transaction_id
+, rider_id
+, CASE WHEN unusual_order = "1" THEN "yes" END AS unusual_rider
+
+FROM raw
+
+GROUP BY 1,2,3
+ORDER BY 1,2,3
+)
+
+--//PART-2 COUNTING NUMBER OF RIDERS WITH UNUSUAL ORDER
+, rider_final AS
+(
+SELECT
+transaction_id
+, rider_id AS unusual_rider_id
+, rider.unusual_rider
+
+FROM rider
+WHERE unusual_rider = "yes"
+
+GROUP BY 1,2,3
+ORDER BY 1,2,3
+)
+
+
+, raw_final AS
+(
+SELECT
+raw.week_num
+, day
+, raw.ride_distance
+, raw.rider_id
+, raw.transaction_id
+, raw.Ride_price__Euros_
+, raw.Client_paid__Euros_
+, CAST(raw.unusual_order AS FLOAT64) AS unusual_order
+, rider_final.unusual_rider_id
+
+FROM raw
+LEFT JOIN rider_final ON raw.transaction_id = rider_final.transaction_id
+
+GROUP BY 1,2,3,4,5,6,7,8,9
+ORDER BY 1,2,3,4,5,6,7,8,9
+)
+
+--//FINAL AGGREGATE DATA
+SELECT
+raw_final.week_num
+, day
+, CONCAT(raw_final.week_num,' ',day) AS week_day
+, ride_distance
+, COUNT(DISTINCT rider_id) AS total_rider_num
+, COUNT(DISTINCT unusual_rider_id) AS unusual_rider
+, COUNT(DISTINCT transaction_id) AS total_order_num
+, SUM(unusual_order) AS unusual_order
+, ROUND(SUM(COALESCE (Ride_price__Euros_,0)),2) AS gmv 
+, ROUND(SUM(COALESCE (Client_paid__Euros_,0)),2) AS client_paid
+
+FROM raw_final
+
+GROUP BY 1,2,3,4
+ORDER BY 1,2,3,4
+
